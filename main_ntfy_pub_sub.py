@@ -3,6 +3,7 @@ import websockets
 import json
 import re
 import os
+import signal
 import requests # For fetching attachment content
 import socket # For socket.gaierror
 from gtts import gTTS
@@ -129,9 +130,26 @@ async def ntfy_listener():
     print(f"Listening for topic: {NTFY_TOPIC}")
     print(f"Expecting title: \"{TARGET_NTFY_TITLE}\"")
     print(f"Expecting attachment: \"{TARGET_ATTACHMENT_NAME}\"")
-    print("Press Ctrl+C to stop.")
 
-    while True:
+    # Flag to control the main loop
+    running = True
+    
+    # Create an event to signal when to stop
+    stop_event = asyncio.Event()
+    
+    # Define signal handlers
+    def signal_handler():
+        nonlocal running
+        print("\nReceived termination signal. Shutting down...")
+        running = False
+        stop_event.set()
+    
+    # Register signal handlers for both SIGINT and SIGTERM
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, signal_handler)
+
+    while running:
         # led_on() # Attempt to turn LED ON indicating an active connection attempt or state
         try:
             async with websockets.connect(NTFY_WEBSOCKET_URL) as websocket:
@@ -208,8 +226,7 @@ if __name__ == "__main__":
     setup_gpio()
     try:
         asyncio.run(ntfy_listener())
-    except KeyboardInterrupt:
-        print("\nStopping ntfy listener...")
+    # KeyboardInterrupt is now handled by the signal handler in ntfy_listener
     except Exception as e:
         print(f"Unhandled exception in main: {e}")
     finally:
