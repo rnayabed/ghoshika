@@ -12,6 +12,12 @@ from googleapiclient.errors import HttpError
 from gtts import gTTS
 import playsound3 # For playing the audio
 
+import requests # for ntfy
+
+from datetime import datetime
+
+import asyncio
+
 # Attempt to import RPi.GPIO and set up a flag
 try:
     import RPi.GPIO as GPIO
@@ -271,20 +277,19 @@ def check_new_emails(service):
     except Exception as e:
         print(f"An unexpected error occurred while checking emails: {e}")
 
-def main():
-    # Flag to control the main loop
-    running = True
-    
-    # Signal handler function
-    def signal_handler(sig, frame):
-        nonlocal running
-        print("\nReceived termination signal. Shutting down...")
-        running = False
-    
-    # Register signal handlers for both SIGINT (Ctrl+C) and SIGTERM
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-    
+
+def ntfy_crash_alert():
+    requests.post(
+        'https://ntfy.sh/ghoshika_alerts',
+        data='App crashed. check logs.'.encode(encoding='utf-8'),
+        headers={
+            'p': '5'
+        }   
+    )
+
+crash_alert_enabled = True
+
+async def main_task():
     if not os.path.exists(CREDENTIALS_FILE):
         print(f"Error: Credentials file '{CREDENTIALS_FILE}' not found.")
         print("Please download your OAuth 2.0 client secrets file from the Google Cloud Console.")
@@ -308,7 +313,7 @@ def main():
     last_creds_save_time = time.time()
 
     try:
-        while running:
+        while True:
             # Check if credentials are still valid before making API calls
             if not creds or not creds.valid:
                 print("WARNING: Credentials became invalid. Attempting to refresh/re-acquire.")
@@ -322,8 +327,7 @@ def main():
                     led_on()
                     last_creds_save_time = time.time() # Reset timer
 
-            check_new_emails(service)
-            
+            # refresh creds if needed
             current_time = time.time()
             if (current_time - last_creds_save_time) > SAVE_CREDS_INTERVAL_SECONDS:
                 if creds and creds.valid and creds.refresh_token: # Only try to refresh if we have a refresh token
@@ -350,8 +354,15 @@ def main():
 
                 last_creds_save_time = current_time # Update time regardless of refresh success to avoid tight loop on failure
             
-            time.sleep(1) # Poll every 10 seconds (increased from 1s)
-    # KeyboardInterrupt is now handled by the signal handler
+
+            hour = datetime.now().hour
+ 
+            if hour >= 8 and hour <= 23:
+                check_new_emails(service)
+                await asyncio.sleep(5)
+            else:
+                print('shop closed. sleep for 15 minutes')
+                await asyncio.sleep(900) # sleep for 15 minutes 
     except Exception as e:
         print(f"Unhandled exception in main loop: {e}")
     finally:
@@ -366,5 +377,21 @@ def main():
                 print(f"Error cleaning up temporary audio file {AUDIO_FILENAME} on exit: {e}")
         print("Listener stopped.")
 
+
+async def main():
+    crash_alert_enabled = True
+
+    mt = asyncio.create_task(main_task())
+
+    try:
+        await mt
+    except asyncio.CancelledError:
+        print("received termination signal. shut down.")
+        crash_alert_enabled = False
+
+    if crash_alert_enabled:
+        ntfy_crash_alert()
+
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
+    

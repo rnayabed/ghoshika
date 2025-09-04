@@ -1,0 +1,5 @@
+#!/bin/zsh
+
+source .venv/bin/activate && python google_auth_gen.py
+scp google_*.json shop.local:~/ghoshika
+
