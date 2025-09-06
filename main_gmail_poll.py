@@ -102,6 +102,7 @@ def speak_text(text_to_speak):
         playsound3.playsound(AUDIO_FILENAME)
     except Exception as e:
         print(f"Error in text-to-speech or playback: {e}")
+        ntfy_publish('Failed to speak', 5)
     finally:
         if os.path.exists(AUDIO_FILENAME):
             try:
@@ -232,6 +233,7 @@ def process_email(service, message_id):
 
                 speech_message = f"Rupees. {extracted_sum}. received."
                 speak_text(speech_message)
+                ntfy_publish(speech_message, 4)
                 blink_led_sync()
             else:
                 pass
@@ -278,14 +280,19 @@ def check_new_emails(service):
         print(f"An unexpected error occurred while checking emails: {e}")
 
 
-def ntfy_crash_alert():
-    requests.post(
-        'https://ntfy.sh/ghoshika_alerts',
-        data='App crashed. check logs.'.encode(encoding='utf-8'),
-        headers={
-            'p': '5'
-        }   
-    )
+# priority: 1 - 5(max)
+def ntfy_publish(message, priority=1):
+    try: 
+        requests.post(
+            'https://ntfy.sh/ghoshika_alerts',
+            data=message.encode(encoding='utf-8'),
+            headers={
+                'p': str(priority)
+            }   
+        )
+    except Exception as e:
+        printf(f'Failed to send ntfy alert: {e}')
+    
 
 crash_alert_enabled = True
 
@@ -390,8 +397,9 @@ async def main():
         crash_alert_enabled = False
 
     if crash_alert_enabled:
-        ntfy_crash_alert()
+        ntfy_publish('APP CRASHED', 5)
 
+ntfy_publish('App started', 1)
 if __name__ == "__main__":
     asyncio.run(main())
     
